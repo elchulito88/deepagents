@@ -446,8 +446,10 @@ def execute_task(
                                 captured_input_tokens = max(captured_input_tokens, input_toks)
                                 captured_output_tokens = max(captured_output_tokens, output_toks)
 
-                    # Handle text content (universal across all models)
-                    if hasattr(message, "content") and isinstance(message.content, str):
+                    # Handle text content (for non-Anthropic models that don't have content_blocks)
+                    # Anthropic models will use content_blocks below instead
+                    if (not hasattr(message, "content_blocks") and
+                        hasattr(message, "content") and isinstance(message.content, str)):
                         text = message.content
                         if text:
                             if summary_mode:

@@ -29,7 +29,7 @@ To use Ollama with the Deep Agents CLI, set the following environment variables:
 # Required: The Ollama server URL
 export OLLAMA_BASE_URL=http://localhost:11434
 
-# Optional: The model to use (defaults to llama2)
+# Optional: The model to use (defaults to llama3.1)
 export OLLAMA_MODEL=qwen2.5-coder:14b
 ```
 
@@ -91,11 +91,30 @@ For general tasks:
 ## Model Priority
 
 The Deep Agents CLI checks for model configurations in this order:
-1. **OpenAI** (if `OPENAI_API_KEY` is set)
-2. **Anthropic** (if `ANTHROPIC_API_KEY` is set)
-3. **Ollama** (if `OLLAMA_BASE_URL` is set)
+1. **Ollama** (if `OLLAMA_BASE_URL` is set)
+2. **OpenAI** (if `OPENAI_API_KEY` is set)
+3. **Anthropic** (if `ANTHROPIC_API_KEY` is set)
 
-To ensure Ollama is used, make sure `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are not set.
+Ollama is now prioritized first for local-first development.
+
+## Tool Calling Support
+
+**Important**: Not all Ollama models support tool/function calling properly. For best results with Deep Agents:
+
+**✅ Models with good tool support:**
+- **llama3.1:8b** (default) - Excellent tool calling support
+- **llama3.1:70b** - Best quality, requires more resources
+- **mistral:latest** - Good tool support
+
+**⚠️  Limited or no tool support:**
+- **qwen2.5-coder:7b** - Returns tool calls as text, not structured
+- **qwen2.5-coder:14b** - Same limitation
+- **deepseek-coder** models - Limited tool support
+
+If you experience issues where tools are not being called, try switching to `llama3.1:8b`:
+```bash
+export OLLAMA_MODEL=llama3.1:8b
+```
 
 ## Performance Tips
 

@@ -228,9 +228,9 @@ ollama pull qwen2.5-coder:14b
 
 The CLI checks for models in this order:
 
-1. **OpenAI** (if `OPENAI_API_KEY` is set)
-2. **Anthropic** (if `ANTHROPIC_API_KEY` is set)
-3. **Ollama** (if `OLLAMA_BASE_URL` is set)
+1. **Ollama** (if `OLLAMA_BASE_URL` is set)
+2. **OpenAI** (if `OPENAI_API_KEY` is set)
+3. **Anthropic** (if `ANTHROPIC_API_KEY` is set)
 
 To ensure a specific provider is used, only set environment variables for that provider.
 

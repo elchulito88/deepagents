@@ -436,11 +436,6 @@ def execute_task(
                         # results are hidden from user - agent will process and respond
                         continue
 
-                    # Check if this is an AIMessageChunk
-                    if not hasattr(message, "content_blocks"):
-                        # Fallback for messages without content_blocks
-                        continue
-
                     # Extract token usage if available
                     if token_tracker and hasattr(message, "usage_metadata"):
                         usage = message.usage_metadata
@@ -451,110 +446,43 @@ def execute_task(
                                 captured_input_tokens = max(captured_input_tokens, input_toks)
                                 captured_output_tokens = max(captured_output_tokens, output_toks)
 
-                    # Process content blocks (this is the key fix!)
-                    for block in message.content_blocks:
-                        block_type = block.get("type")
-
-                        # Handle text blocks
-                        if block_type == "text":
-                            text = block.get("text", "")
-                            if text:
-                                if summary_mode:
-                                    summary_buffer += text
-                                    continue
-
-                                if is_summary_message(text) or is_summary_message(
-                                    pending_text + text
-                                ):
-                                    if pending_text:
-                                        summary_buffer += pending_text
-                                        pending_text = ""
-                                    summary_mode = True
-                                    summary_buffer += text
-                                    continue
-
+                    # Handle text content (universal across all models)
+                    if hasattr(message, "content") and isinstance(message.content, str):
+                        text = message.content
+                        if text:
+                            if summary_mode:
+                                summary_buffer += text
+                            elif is_summary_message(text) or is_summary_message(pending_text + text):
+                                if pending_text:
+                                    summary_buffer += pending_text
+                                    pending_text = ""
+                                summary_mode = True
+                                summary_buffer += text
+                            else:
                                 pending_text += text
 
-                        # Handle reasoning blocks
-                        elif block_type == "reasoning":
-                            flush_summary_buffer()
-                            flush_text_buffer(final=True)
-                            reasoning = block.get("reasoning", "")
-                            if reasoning:
-                                if spinner_active:
-                                    status.stop()
-                                    spinner_active = False
-                                # Could display reasoning differently if desired
-                                # For now, skip it or handle minimally
-
-                        # Handle tool call chunks
-                        elif block_type == "tool_call_chunk":
-                            chunk_name = block.get("name")
-                            chunk_args = block.get("args")
-                            chunk_id = block.get("id")
-                            chunk_index = block.get("index")
-
-                            # Use index as stable buffer key; fall back to id if needed
-                            buffer_key: str | int
-                            if chunk_index is not None:
-                                buffer_key = chunk_index
-                            elif chunk_id is not None:
-                                buffer_key = chunk_id
-                            else:
-                                buffer_key = f"unknown-{len(tool_call_buffers)}"
-
-                            buffer = tool_call_buffers.setdefault(
-                                buffer_key,
-                                {"name": None, "id": None, "args": None, "args_parts": []},
-                            )
-
-                            if chunk_name:
-                                buffer["name"] = chunk_name
-                            if chunk_id:
-                                buffer["id"] = chunk_id
-
-                            if isinstance(chunk_args, dict):
-                                buffer["args"] = chunk_args
-                                buffer["args_parts"] = []
-                            elif isinstance(chunk_args, str):
-                                if chunk_args:
-                                    parts: list[str] = buffer.setdefault("args_parts", [])
-                                    if not parts or chunk_args != parts[-1]:
-                                        parts.append(chunk_args)
-                                    buffer["args"] = "".join(parts)
-                            elif chunk_args is not None:
-                                buffer["args"] = chunk_args
-
-                            buffer_name = buffer.get("name")
-                            buffer_id = buffer.get("id")
-                            if buffer_name is None:
-                                continue
-                            if buffer_id is not None and buffer_id in displayed_tool_ids:
+                    # Handle universal tool_calls attribute (works for OpenAI, Ollama, Anthropic)
+                    if hasattr(message, "tool_calls") and message.tool_calls:
+                        for tool_call in message.tool_calls:
+                            if not isinstance(tool_call, dict):
                                 continue
 
-                            parsed_args = buffer.get("args")
-                            if isinstance(parsed_args, str):
-                                if not parsed_args:
-                                    continue
-                                try:
-                                    parsed_args = json.loads(parsed_args)
-                                except json.JSONDecodeError:
-                                    # Wait for more chunks to form valid JSON
-                                    continue
-                            elif parsed_args is None:
+                            tool_name = tool_call.get("name")
+                            tool_id = tool_call.get("id")
+                            tool_args = tool_call.get("args")
+
+                            if not tool_name or tool_id in displayed_tool_ids:
                                 continue
 
-                            # Ensure args are in dict form for formatter
-                            if not isinstance(parsed_args, dict):
-                                parsed_args = {"value": parsed_args}
+                            if not isinstance(tool_args, dict):
+                                continue
 
                             flush_summary_buffer()
                             flush_text_buffer(final=True)
-                            if buffer_id is not None:
-                                displayed_tool_ids.add(buffer_id)
-                                file_op_tracker.start_operation(buffer_name, parsed_args, buffer_id)
-                            tool_call_buffers.pop(buffer_key, None)
-                            icon = tool_icons.get(buffer_name, "🔧")
+                            displayed_tool_ids.add(tool_id)
+                            file_op_tracker.start_operation(tool_name, tool_args, tool_id)
+
+                            icon = tool_icons.get(tool_name, "🔧")
 
                             if spinner_active:
                                 status.stop()
@@ -562,7 +490,7 @@ def execute_task(
                             if has_responded:
                                 console.print()
 
-                            display_str = format_tool_display(buffer_name, parsed_args)
+                            display_str = format_tool_display(tool_name, tool_args)
                             console.print(
                                 f"  {icon} {display_str}",
                                 style=f"dim {COLORS['tool']}",
@@ -572,6 +500,129 @@ def execute_task(
                             if not spinner_active:
                                 status.start()
                                 spinner_active = True
+
+                    # Process Anthropic-specific content_blocks for streaming (if available)
+                    if hasattr(message, "content_blocks"):
+                        for block in message.content_blocks:
+                            block_type = block.get("type")
+
+                            # Handle text blocks
+                            if block_type == "text":
+                                text = block.get("text", "")
+                                if text:
+                                    if summary_mode:
+                                        summary_buffer += text
+                                        continue
+
+                                    if is_summary_message(text) or is_summary_message(
+                                        pending_text + text
+                                    ):
+                                        if pending_text:
+                                            summary_buffer += pending_text
+                                            pending_text = ""
+                                        summary_mode = True
+                                        summary_buffer += text
+                                        continue
+
+                                    pending_text += text
+
+                            # Handle reasoning blocks
+                            elif block_type == "reasoning":
+                                flush_summary_buffer()
+                                flush_text_buffer(final=True)
+                                reasoning = block.get("reasoning", "")
+                                if reasoning:
+                                    if spinner_active:
+                                        status.stop()
+                                        spinner_active = False
+                                    # Could display reasoning differently if desired
+                                    # For now, skip it or handle minimally
+
+                            # Handle tool call chunks
+                            elif block_type == "tool_call_chunk":
+                                chunk_name = block.get("name")
+                                chunk_args = block.get("args")
+                                chunk_id = block.get("id")
+                                chunk_index = block.get("index")
+
+                                # Use index as stable buffer key; fall back to id if needed
+                                buffer_key: str | int
+                                if chunk_index is not None:
+                                    buffer_key = chunk_index
+                                elif chunk_id is not None:
+                                    buffer_key = chunk_id
+                                else:
+                                    buffer_key = f"unknown-{len(tool_call_buffers)}"
+
+                                buffer = tool_call_buffers.setdefault(
+                                    buffer_key,
+                                    {"name": None, "id": None, "args": None, "args_parts": []},
+                                )
+
+                                if chunk_name:
+                                    buffer["name"] = chunk_name
+                                if chunk_id:
+                                    buffer["id"] = chunk_id
+
+                                if isinstance(chunk_args, dict):
+                                    buffer["args"] = chunk_args
+                                    buffer["args_parts"] = []
+                                elif isinstance(chunk_args, str):
+                                    if chunk_args:
+                                        parts: list[str] = buffer.setdefault("args_parts", [])
+                                        if not parts or chunk_args != parts[-1]:
+                                            parts.append(chunk_args)
+                                        buffer["args"] = "".join(parts)
+                                elif chunk_args is not None:
+                                    buffer["args"] = chunk_args
+
+                                buffer_name = buffer.get("name")
+                                buffer_id = buffer.get("id")
+                                if buffer_name is None:
+                                    continue
+                                if buffer_id is not None and buffer_id in displayed_tool_ids:
+                                    continue
+
+                                parsed_args = buffer.get("args")
+                                if isinstance(parsed_args, str):
+                                    if not parsed_args:
+                                        continue
+                                    try:
+                                        parsed_args = json.loads(parsed_args)
+                                    except json.JSONDecodeError:
+                                        # Wait for more chunks to form valid JSON
+                                        continue
+                                elif parsed_args is None:
+                                    continue
+
+                                # Ensure args are in dict form for formatter
+                                if not isinstance(parsed_args, dict):
+                                    parsed_args = {"value": parsed_args}
+
+                                flush_summary_buffer()
+                                flush_text_buffer(final=True)
+                                if buffer_id is not None:
+                                    displayed_tool_ids.add(buffer_id)
+                                    file_op_tracker.start_operation(buffer_name, parsed_args, buffer_id)
+                                tool_call_buffers.pop(buffer_key, None)
+                                icon = tool_icons.get(buffer_name, "🔧")
+
+                                if spinner_active:
+                                    status.stop()
+
+                                if has_responded:
+                                    console.print()
+
+                                display_str = format_tool_display(buffer_name, parsed_args)
+                                console.print(
+                                    f"  {icon} {display_str}",
+                                    style=f"dim {COLORS['tool']}",
+                                    markup=False,
+                                )
+
+                                if not spinner_active:
+                                    status.start()
+                                    spinner_active = True
 
                     if getattr(message, "chunk_position", None) == "last":
                         flush_summary_buffer()

@@ -25,12 +25,42 @@ from deepagents.middleware.subagents import CompiledSubAgent, SubAgent, SubAgent
 BASE_AGENT_PROMPT = "In order to complete the objective that the user asks of you, you have access to a number of standard tools."
 
 
-def get_default_model() -> ChatAnthropic:
+def get_default_model() -> BaseChatModel:
     """Get the default model for deep agents.
 
+    Priority order: Ollama > OpenAI > Anthropic
+
     Returns:
-        ChatAnthropic instance configured with Claude Sonnet 4.
+        ChatModel instance (Ollama, OpenAI, or Anthropic)
     """
+    import os
+
+    ollama_base_url = os.environ.get("OLLAMA_BASE_URL")
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+
+    if ollama_base_url:
+        from langchain_ollama import ChatOllama
+        model_name = os.environ.get("OLLAMA_MODEL", "llama3.1")
+        return ChatOllama(
+            model=model_name,
+            base_url=ollama_base_url,
+            temperature=0.7,
+        )
+    if openai_key:
+        from langchain_openai import ChatOpenAI
+        model_name = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+        return ChatOpenAI(
+            model=model_name,
+            temperature=0.7,
+        )
+    if anthropic_key:
+        return ChatAnthropic(
+            model_name=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
+            max_tokens=20000,
+        )
+
+    # Fallback to Anthropic if no env vars are set (for backward compatibility)
     return ChatAnthropic(
         model_name="claude-sonnet-4-5-20250929",
         max_tokens=20000,

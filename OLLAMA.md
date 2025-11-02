@@ -91,29 +91,44 @@ For general tasks:
 ## Model Priority
 
 The Deep Agents CLI checks for model configurations in this order:
-1. **Ollama** (if `OLLAMA_BASE_URL` is set)
-2. **OpenAI** (if `OPENAI_API_KEY` is set)
-3. **Anthropic** (if `ANTHROPIC_API_KEY` is set)
+1. **OpenAI** (if `OPENAI_API_KEY` is set)
+2. **Anthropic** (if `ANTHROPIC_API_KEY` is set)
+3. **Ollama** (if `OLLAMA_BASE_URL` is set)
 
-Ollama is now prioritized first for local-first development.
+**⚠️  Important**: OpenAI and Anthropic are recommended for production use due to superior tool-calling reliability.
 
-## Tool Calling Support
+## Tool Calling Limitations
 
-**Important**: Not all Ollama models support tool/function calling properly. For best results with Deep Agents:
+**Critical**: Ollama models have significant limitations with tool/function calling in complex agent frameworks like Deep Agents:
 
-**✅ Models with good tool support:**
-- **llama3.1:8b** (default) - Excellent tool calling support
-- **llama3.1:70b** - Best quality, requires more resources
-- **mistral:latest** - Good tool support
+### Known Issues
 
-**⚠️  Limited or no tool support:**
-- **qwen2.5-coder:7b** - Returns tool calls as text, not structured
-- **qwen2.5-coder:14b** - Same limitation
+1. **Tool Call Hallucinations**: Models may return fabricated JSON responses instead of calling actual tools
+2. **Incorrect Arguments**: When tools are called, arguments are often wrong (e.g., `ls(/)` instead of `ls()`)
+3. **Unreliable Execution**: Tools may not execute at all, with models preferring to generate text responses
+4. **Subagent Problems**: Nested agent calls are particularly unreliable
+
+### Model Support Status
+
+**❌ Not Recommended for Deep Agents:**
+- **llama3.1:8b** - Basic tool support but unreliable in agent workflows
+- **llama3.1:70b** - Better than 8b but still has issues
+- **mistral:latest** - Inconsistent tool calling
+- **qwen2.5-coder** (all sizes) - Returns tool calls as text, not structured
 - **deepseek-coder** models - Limited tool support
 
-If you experience issues where tools are not being called, try switching to `llama3.1:8b`:
+### Recommendation
+
+**For production use**: Use OpenAI (gpt-4o) or Anthropic (Claude Sonnet) models.
+**For development**: Ollama can work for simple tasks but expect tool-calling issues.
+
+If you must use Ollama and experience issues:
 ```bash
+# Try llama3.1 (best Ollama option, but still limited)
 export OLLAMA_MODEL=llama3.1:8b
+
+# Or switch to a cloud model
+export ANTHROPIC_API_KEY=your_key_here
 ```
 
 ## Performance Tips
